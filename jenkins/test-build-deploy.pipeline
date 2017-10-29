@@ -1,0 +1,41 @@
+node {
+    properties([
+        parameters([string(defaultValue: '1.0.0-SNAPSHOT', description: 'Version', name: 'version'), booleanParam(defaultValue: true, description: '', name: 'doDeploy')])
+    ])
+
+    stage ('Checkout') {
+       // def scmVars = checkout scm
+       def scmVars = checkout([$class: 'GitSCM', branches: [[name: '*/master']], userRemoteConfigs: [[url: '/H/Programming/Workspaces/jenkins']]])
+			 def commitHash = scmVars.GIT_COMMIT.take(7)
+			 echo "Git ref: $commitHash"
+    }
+
+    try {
+        stage ('Build') {
+            withMaven(maven: 'maven-3.5.0') {
+                bat "mvn -B -f mvn-test-project/pom.xml versions:set -DnewVersion=${version}.${commitHash}"
+                bat "mvn -B -f mvn-test-project/pom.xml clean package -DskipTests"
+            }
+        }
+        stage ('Test') {
+            withMaven(maven: 'maven-3.5.0') {
+                bat "mvn -B -f mvn-test-project/pom.xml verify"
+            }
+        }
+        stage ('Deploy') {
+            if (doDeploy) {
+                echo "This would do the deployment to a server. Just imagine it for your own project and be happy this is much faster... "
+            }
+        }
+        stage ('Javadoc') {
+            withMaven(maven: 'maven-3.5.0') {
+                bat "mvn -B -f mvn-test-project/pom.xml javadoc:javadoc"
+            }
+            publishHTML([allowMissing: false, alwaysLinkToLastBuild: true, keepAll: true, reportDir: 'mvn-test-project/target/site/apidocs', reportFiles: 'index.html', reportName: 'Javadoc', reportTitles: 'Test Project'])
+        }
+    } catch (e) {
+        echo "We got an error!"
+    } finally {
+        emailextrecipients([[$class: 'CulpritsRecipientProvider']])
+    }
+}
